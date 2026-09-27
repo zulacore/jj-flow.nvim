@@ -1,6 +1,6 @@
--- jj-flow.nvim: a small manual review workflow for Jujutsu + CodeDiff + Pi.
+-- jj-flow.nvim: a small manual review workflow for Jujutsu + Pi.
 --
---   :JReview   show exactly the current change (@) in CodeDiff
+--   :JReview   show exactly the current change (@) in the review UI
 --   :JNew      describe @ with Pi if needed, then start a new change
 --   :JNew!     start a new change without asking Pi
 --   :JAbandon  discard the current change (@) only
@@ -61,7 +61,15 @@ end
 
 function M.review()
   if not ensure_repo() then return end
-  local ok, err = review.open()
+
+  local backend = require 'jj-flow.review.backend'
+  local model, model_err = backend.build()
+  if not model then
+    notify(model_err or 'could not build the review', vim.log.levels.ERROR)
+    return
+  end
+
+  local ok, err = review.open(model)
   if not ok then notify(err or 'could not open the review', vim.log.levels.ERROR) end
 end
 
@@ -205,7 +213,7 @@ function M.setup(opts)
   config.setup(opts)
 
   vim.api.nvim_create_user_command('JReview', M.review, {
-    desc = 'Review the current Jujutsu change (@) in CodeDiff',
+    desc = 'Review the current Jujutsu change (@) in the review UI',
   })
 
   vim.api.nvim_create_user_command('JNew', function(args)

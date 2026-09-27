@@ -15,26 +15,16 @@ function M.check()
     vim.health.warn 'the current directory is not inside a jj repository'
   else
     vim.health.ok 'inside a jj repository'
-    local root = vim.fn.systemlist({ 'jj', 'root' })[1]
-    if root and vim.uv.fs_stat(root .. '/.git') then
-      vim.health.ok 'repository is colocated (has .git)'
+
+    -- The review UI is Jujutsu-native, so the only thing worth checking is
+    -- that the change of @ can actually be read.
+    local backend = require 'jj-flow.review.backend'
+    local model, err = backend.build()
+    if model then
+      vim.health.ok(string.format('review backend: %d file(s) changed in @', #model.files))
     else
-      vim.health.warn 'repository is not colocated; :JReview needs CodeDiff, which is Git-based'
+      vim.health.warn('review backend: ' .. tostring(err))
     end
-  end
-
-  -- CodeDiff
-  if vim.fn.exists ':CodeDiff' == 2 then
-    vim.health.ok 'codediff.nvim is available'
-  else
-    vim.health.warn 'codediff.nvim not found; :JReview needs it'
-  end
-
-  -- jj.nvim (optional)
-  if pcall(require, 'jj.diff') then
-    vim.health.info 'jj.nvim found; :JReview reuses its CodeDiff backend'
-  else
-    vim.health.info 'jj.nvim not found; :JReview calls CodeDiff directly'
   end
 
   -- pi-nvim RPC (needed by :JNew)

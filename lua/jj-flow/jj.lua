@@ -1,8 +1,7 @@
 -- Thin wrapper around the `jj` CLI.
 --
 -- Only the operations needed by the workflow live here. This is intentionally
--- not a general Jujutsu client: `jj.nvim` (if installed) remains the general
--- integration.
+-- not a general Jujutsu client.
 
 local M = {}
 
@@ -24,6 +23,15 @@ function M.is_repo()
   local result = run { 'root' }
   return result ~= nil and result.code == 0
 end
+
+---Run a raw `jj` command.
+---
+---Exposed for callers that need a primitive this wrapper does not model (the
+---review backend, for instance). Prefer the named helpers above when one fits.
+---@param args string[]
+---@return table|nil result `{ code, stdout, stderr }` from `vim.system`
+---@return string|nil err
+function M.run(args) return run(args) end
 
 ---@class jj-flow.ChangeInfo
 ---@field empty boolean
