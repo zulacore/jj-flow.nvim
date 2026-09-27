@@ -10,6 +10,7 @@ local M = {}
 local highlights = require 'jj-flow.review.highlights'
 local diff_module = require 'jj-flow.review.diff'
 local compact = require 'jj-flow.review.compact'
+local comments = require 'jj-flow.review.comments'
 
 local ns_highlight = highlights.ns_highlight
 local ns_filler = highlights.ns_filler
@@ -169,6 +170,7 @@ function M.render_file(session, path)
   session.diff = diff
 
   M.apply_highlights(session, diff)
+  comments.render(session)
   compact.refresh(session)
   M.setup_view(session, diff)
 end

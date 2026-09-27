@@ -27,7 +27,7 @@ function M.check()
     end
   end
 
-  -- pi-nvim RPC (needed by :JNew)
+  -- pi-nvim RPC (needed by :JNew; :JFix additionally needs a live session)
   local REQUIRED_PROTOCOL = 1
 
   local ok, pi = pcall(require, 'pi-nvim')

@@ -9,6 +9,16 @@ local M = {}
 M.ns_highlight = vim.api.nvim_create_namespace 'jj-flow-review-highlight'
 M.ns_filler = vim.api.nvim_create_namespace 'jj-flow-review-filler'
 M.ns_explorer = vim.api.nvim_create_namespace 'jj-flow-review-explorer'
+M.ns_comment = vim.api.nvim_create_namespace 'jj-flow-review-comment'
+M.ns_comment_pad = vim.api.nvim_create_namespace 'jj-flow-review-comment-pad'
+
+---Highlight group for a comment type. Used by `comments.lua` and `commentui.lua`.
+---@type table<string, { sign: string, name: string, hl: string, line_hl: string }>
+M.comment_types = {
+  issue = { sign = '●', name = 'ISSUE', hl = 'JjFlowCommentIssue', line_hl = 'JjFlowCommentIssueLine' },
+  suggestion = { sign = '◆', name = 'SUGGESTION', hl = 'JjFlowCommentSuggestion', line_hl = 'JjFlowCommentSuggestionLine' },
+  note = { sign = '○', name = 'NOTE', hl = 'JjFlowCommentNote', line_hl = 'JjFlowCommentNoteLine' },
+}
 
 ---@param color number|nil
 ---@param factor number
@@ -57,6 +67,16 @@ function M.setup()
   vim.api.nvim_set_hl(0, 'JjFlowStatusAdded', { link = 'DiagnosticOk', default = true })
   vim.api.nvim_set_hl(0, 'JjFlowStatusModified', { link = 'DiagnosticWarn', default = true })
   vim.api.nvim_set_hl(0, 'JjFlowStatusDeleted', { link = 'DiagnosticError', default = true })
+
+  -- Review comments. The sign/box colors follow the diagnostics palette; the
+  -- line backgrounds are theme-independent and intentionally subtle so the
+  -- diff line/char highlights underneath remain readable.
+  vim.api.nvim_set_hl(0, 'JjFlowCommentIssue', { link = 'DiagnosticError', default = true })
+  vim.api.nvim_set_hl(0, 'JjFlowCommentSuggestion', { link = 'DiagnosticWarn', default = true })
+  vim.api.nvim_set_hl(0, 'JjFlowCommentNote', { link = 'DiagnosticInfo', default = true })
+  vim.api.nvim_set_hl(0, 'JjFlowCommentIssueLine', { bg = '#2e1b1e', default = true })
+  vim.api.nvim_set_hl(0, 'JjFlowCommentSuggestionLine', { bg = '#2e2a17', default = true })
+  vim.api.nvim_set_hl(0, 'JjFlowCommentNoteLine', { bg = '#17262e', default = true })
 
   if not M._autocmd then
     M._autocmd = vim.api.nvim_create_augroup('jj_flow_review_highlights', { clear = true })

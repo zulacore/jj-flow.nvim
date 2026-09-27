@@ -21,9 +21,15 @@ local jj = require 'jj-flow.jj'
 ---@field path string Repository-relative path.
 ---@field status string Single-letter status from `jj diff --summary` (A/M/D/...).
 
+---@class jj-flow.ReviewSnapshot
+---@field change_id string|nil
+---@field commit_id string|nil
+---@field parent_commit_id string|nil
+
 ---@class jj-flow.ReviewModel
 ---@field files jj-flow.ReviewFile[]
 ---@field root string
+---@field snapshot jj-flow.ReviewSnapshot
 ---@field get_original fun(path: string): string[]
 ---@field get_modified fun(path: string): string[]
 
@@ -87,9 +93,19 @@ function M.build()
     return cache[key]
   end
 
+  -- Capture immutable identifiers of the reviewed state. Comments are anchored
+  -- to buffer lines of this exact revision; if @ moves, the review becomes
+  -- stale and `:JFix` refuses to apply it to a different change.
+  local info = jj.change_info '@'
+
   return {
     files = files,
     root = root,
+    snapshot = {
+      change_id = info and info.change_id,
+      commit_id = info and info.commit_id,
+      parent_commit_id = info and info.parent_commit_id,
+    },
     get_original = function(path) return cached('@-', path) end,
     get_modified = function(path) return cached('@', path) end,
   }

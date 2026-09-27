@@ -5,19 +5,22 @@ A small manual review workflow for Jujutsu (`jj`) + Pi.
 The idea is to control checkpoints by hand:
 
 ```
-:JNew
-   ↓
-Pi works on the current change @
+trabajo sobre @
    ↓
 :JReview
    ↓
-the review tab shows exactly @
+reviso el diff y acumulo comentarios
+(issue / suggestion / note, en línea o rango)
    ↓
-┌─────────────────┬─────────────────┐
-│ I like it       │ I don't like it │
-│                 │                 │
-:JNew            Pi keeps working
-                  on the same @
+:JFix
+   ↓
+Pi recibe TODOS los comentarios en una sola petición
+   ↓
+Pi modifica @
+   ↓
+:JReview  (la review anterior queda stale)
+   ↓
+si está correcto → :JNew
 ```
 
 And if you want to throw the current work away:
@@ -27,7 +30,12 @@ And if you want to throw the current work away:
 ```
 
 Pi does **not** run `jj new`, `jj abandon`, `jj squash`, or `jj rebase`. It only
-produces text when `:JNew` asks for it.
+modifies the working copy when `:JFix` sends it review feedback, and only
+produces text when `:JNew` asks for a description.
+
+During `:JReview` the diff is a snapshot: comments are anchored to the
+`commit_id` captured when the review opened. `:JFix` refuses to send feedback if
+`@` has moved or been rewritten since.
 
 `:JReview` no longer depends on `codediff.nvim`. It is a small, self-contained,
 Jujutsu-native review tab. It does not need a colocated Git repository and never
@@ -39,7 +47,10 @@ reads the Git index.
 
 | Command | What it does |
 |---|---|
-| `:JReview` | Opens a side-by-side review tab with the exact diff of change `@`. |
+| `:JReview` | Opens a side-by-side review tab with the exact diff of change `@`. Add inline comments, then send them all to Pi with `:JFix`. |
+| `:JFix` | With a review open, sends every comment to the running Pi session in one request, then closes the review. Pi edits `@`; the review is intentionally not kept. |
+| `:JNextDiff` / `:JPrevDiff` | Jump to the next / previous difference in the open review. |
+| `:JNextComment` / `:JPrevComment` | Jump to the next / previous review comment. |
 | `:JNew` | If `@` is empty, does nothing. If it already has a description, just runs `jj new`. If it has content and no description, asks Pi for a description, runs `jj describe -r <change_id> -m "..."`, then `jj new <change_id>`. The `change_id` of `@` is captured before calling Pi, so a concurrent external `jj new` cannot make the description land on a different change. |
 | `:JNew!` | Escape hatch: plain `jj new`, no Pi involved. |
 | `:JAbandon` | `jj abandon @`. Discards only the current change; parents and already-accepted changes are left intact. Asks for confirmation (configurable). |
@@ -58,7 +69,8 @@ Dependencies:
 
 - `jj` on `PATH`.
 - [pi-nvim](https://github.com/zulacore/pi-nvim) on the Neovim side, with its
-  RPC extension loaded in the running Pi session (`llm.complete`).
+  RPC extension loaded in the running Pi session. Description (`:JNew`) uses
+  `llm.complete`; review fixes (`:JFix`) use the interactive prompt channel.
 
 No Git and no diff plugin: the review UI is built into `jj-flow`.
 
@@ -84,12 +96,14 @@ require('jj-flow').setup()
 
 ### Pi
 
-`jj-flow` has no Pi extension of its own. It uses `pi-nvim`'s `llm.complete`
-primitive, so the running Pi session must have `pi-nvim`'s extension loaded.
-See pi-nvim's README for how to install it.
+`jj-flow` has no Pi extension of its own. `:JNew` uses `pi-nvim`'s
+`llm.complete` primitive (isolated, no tools) to describe a change, and `:JFix`
+sends one prompt to the interactive session so Pi can edit the working copy. The
+running Pi session must have `pi-nvim`'s extension loaded. See pi-nvim's README
+for how to install it.
 
 If the RPC primitive is not available, `:JNew` detects it and aborts **without
-touching the repository**.
+touching the repository**; `:JFix` refuses to send and leaves the review open.
 
 ---
 
@@ -118,20 +132,38 @@ What it does:
 - line-level and character-level change highlighting;
 - aligned panes: filler rows are inserted on the shorter side of each hunk and
   the panes are bound with native `scrollbind`;
-- hunk and file navigation;
-- `gc` folds the unchanged regions (compact mode);
+- inline review comments: sign, line/range highlight and a virtual-line box,
+  kept aligned across both panes;
+- hunk, file and comment navigation;
+- `gC` folds the unchanged regions (compact mode);
+- the review buffers are restricted to the keys below, `<Esc>`, `j`/`k`/arrows
+  and `v`/`V` (needed for range selection); any other builtin or plugin key is
+  a no-op. The comment input keeps normal typing;
 - `q` closes the whole session cleanly.
 
 ### Keymaps
 
 | Key | Action |
 |---|---|
-| `q` | Close the review tab and release its buffers. |
+| `q` / `<Esc>` | Close the review tab and release its buffers. |
+| `<Tab>` / `<S-Tab>` | Focus the next / previous pane (explorer → `@-` → `@`, wrapping). |
 | `]c` / `[c` | Next / previous hunk (crosses into the next/previous file at the edges). |
 | `]f` / `[f` | Next / previous file. |
-| `gc` | Toggle compact mode (fold unchanged regions). |
+| `gc` | Add a comment at the cursor (normal) or on the selection (visual). |
+| `gf` | Add a comment on the whole file (from a diff pane or the explorer). |
+| `ge` | Edit the comment under the cursor. |
+| `<CR>` | Edit the comment under the cursor (falls back to the builtin key when there is none). |
+| `gd` | Delete the comment under the cursor. |
+| `gl` | List every comment of the session and jump to one. |
+| `]n` / `[n` | Next / previous comment (crosses files, wraps). |
+| `gC` | Toggle compact mode (fold unchanged regions). |
 | `j` / `k` (explorer) | Move the selection and open the file. |
-| `<CR>` / `l` (explorer) | Open the selected file. |
+| `<CR>` (explorer) | Open the selected file and focus the `current` pane. |
+
+While the comment input float is focused: `<Tab>` cycles the type
+(`issue` → `suggestion` → `note`), `<C-s>` saves and `<Esc>` cancels. All of
+these, plus `gc`/`gf`, are configurable (`comment_cycle`, `comment_submit`,
+`comment_cancel`, `add`, `add_file`).
 
 ### How the diff is rendered
 
@@ -175,6 +207,29 @@ require('jj-flow').setup {
   review_explorer_width = 32,   -- width of the review file list
   review_compact = false,       -- start the review with folds enabled
   review_context_lines = 3,     -- context kept around hunks in compact mode
+  review_comment_width = 60,    -- width of the comment input float
+  review_comment_height = 8,    -- height of the comment input float
+  review_isolate_keymaps = true, -- drop the user's global keymaps in the review buffers
+
+  -- Buffer-local keymaps used inside the review tab. Set any to false to
+  -- disable it; the plugin only defines these in its own scratch buffers.
+  review_keymaps = {
+    add = 'gc',
+    add_file = 'gf',
+    edit = 'ge',
+    open = '<CR>',
+    close = 'q',
+    delete = 'gd',
+    list = 'gl',
+    next = ']n',
+    prev = '[n',
+    next_pane = '<Tab>',
+    prev_pane = '<S-Tab>',
+    compact = 'gC',
+    comment_submit = '<C-s>',
+    comment_cancel = '<Esc>',
+    comment_cycle = '<Tab>',
+  },
 }
 ```
 
@@ -194,7 +249,11 @@ Checks `jj`, the current repository, that the change of `@` can be read, and the
 ## Architecture
 
 jj-flow is a thin workflow layer. It does not talk to the model itself and has
-no Pi extension; it composes `pi-nvim`'s infrastructure primitives.
+no Pi extension; it composes `pi-nvim`'s infrastructure primitives:
+
+- `llm.complete` (isolated, no tools) to describe a change for `:JNew`;
+- `prompt` (fire-and-forget turn in the interactive session, with tools) to make
+  Pi address a review for `:JFix`.
 
 ```
 Neovim (jj-flow)                          Pi (pi-nvim extension)
@@ -221,18 +280,48 @@ Neovim (jj-flow)                          Pi (pi-nvim extension)
 ```
 Jujutsu backend (review.backend)
     │  jj diff -r @ --summary      -> file list + A/M/D
+    │  jj log -T change_id/commit_id -> immutable snapshot ids
     │  jj file show -r @- -- PATH  -> original content
     │  jj file show -r @  -- PATH  -> modified content
     ▼
-review model { files, get_original, get_modified }
+review model { files, snapshot, get_original, get_modified }
     ▼
 review UI / renderer (review, review.render, review.explorer, review.diff, ...)
+    ▼
+comments (review.comments)  -> sign + line/range highlight + virtual-line box
 ```
 
 The renderer is independent of Jujutsu. `:JReview` compares `@` against `@-`
 exactly, which is what `jj diff -r @` shows. When `@-` is the root commit,
 `jj file show -r @-` simply reports no such path, so a first change is shown
 correctly as newly added files.
+
+Comments are session-only. A comment stores `file`, `line`, optional
+`line_end`, `side` (`base` = `@-`, `current` = `@`), `type`
+(`issue`/`suggestion`/`note`) and `text`. Rendering adds a sign, a highlight and
+a box of virtual lines; because virtual lines add screen rows, the opposite pane
+gets the same number of blank virtual rows (keyed by the diff's display
+position) so the native `scrollbind` stays aligned.
+
+### The `:JFix` data flow
+
+```
+:JFix
+  → pi-nvim.available()            is there a live session?
+  → jj log -T commit_id            is @ still the reviewed snapshot?
+       no  → abort (review is stale; run :JReview again)
+       yes → review.feedback.build(session)
+              → numbered [ISSUE]/[SUGGESTION]/[NOTE] list, each with file,
+                line range, side and the quoted code it refers to
+              → pi-nvim.send_raw({ type = 'prompt', message = ... })
+              → close the review and discard its comments
+```
+
+The prompt is explicit about the division of labour: Pi must make the changes in
+the working tree and must **not** create, abandon, squash, rebase, describe or
+`jj new`. Comments written on the `base` side are still to be resolved against
+the current working copy, and the instruction says so. One request is sent for
+the whole review; jj-flow never calls Pi once per comment.
 
 ### The `:JNew` description flow
 
@@ -271,7 +360,7 @@ error is shown. The repository is only modified after a valid description.
 ```
 jj-flow.nvim/
 └── lua/jj-flow/
-    ├── init.lua              setup, commands, the :JNew / :JAbandon flow
+    ├── init.lua              setup, commands, the :JReview / :JFix / :JNew flow
     ├── config.lua            configuration
     ├── jj.lua                minimal jj CLI wrapper
     ├── review.lua            :JReview session, layout and teardown
@@ -281,8 +370,11 @@ jj-flow.nvim/
     │   ├── render.lua        side-by-side rendering, highlights, scrollbind
     │   ├── explorer.lua      file list
     │   ├── compact.lua       folding of unchanged regions
-    │   └── highlights.lua    highlight groups
-    └── pi.lua                pi-nvim wrapper (system prompt + llm.complete)
+    │   ├── highlights.lua    highlight groups and comment namespaces
+    │   ├── comments.lua      comment model, rendering, navigation and list UI
+    │   ├── commentui.lua     floating comment input (type + text)
+    │   └── feedback.lua      review comments -> prompt text for Pi
+    └── pi.lua                pi-nvim wrapper (describe + fix)
 ```
 
 ---
@@ -301,3 +393,9 @@ jj-flow.nvim/
   reports).
 - Compact mode folds each pane independently; opening a fold on one side does
   not mirror it to the other.
+- Review comments are **not persisted**: they live only while the review tab is
+  open. `:JFix` closes the review on purpose, so re-review from scratch after Pi
+  edits `@`.
+- Comments are not rebased across rewrites. If `@` changes while a review is
+  open, `:JFix` detects it and aborts instead of applying feedback to the wrong
+  lines.
