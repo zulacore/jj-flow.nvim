@@ -36,12 +36,15 @@ produces text when `:JNew` asks for it.
 | Command | What it does |
 |---|---|
 | `:JReview` | Opens CodeDiff with the exact diff of change `@`. |
-| `:JNew` | If `@` is empty, does nothing. If it already has a description, just runs `jj new`. If it has content and no description, asks Pi for a description, runs `jj describe -r @ -m "..."`, then `jj new`. |
+| `:JNew` | If `@` is empty, does nothing. If it already has a description, just runs `jj new`. If it has content and no description, asks Pi for a description, runs `jj describe -r <change_id> -m "..."`, then `jj new <change_id>`. The `change_id` of `@` is captured before calling Pi, so a concurrent external `jj new` cannot make the description land on a different change. |
 | `:JNew!` | Escape hatch: plain `jj new`, no Pi involved. |
 | `:JAbandon` | `jj abandon @`. Discards only the current change; parents and already-accepted changes are left intact. Asks for confirmation (configurable). |
 
 An empty `@` **never** creates another empty change.
 An existing description is **never** modified.
+While Pi is working, `:JNew` remains pinned to the `change_id` captured at the
+start. If `@` moves externally in the meantime, `:JNew` aborts and leaves the
+repository untouched (no description, no new change).
 
 ---
 
@@ -122,12 +125,14 @@ no Pi extension; it composes `pi-nvim`'s infrastructure primitives.
 ```
 Neovim (jj-flow)                          Pi (pi-nvim extension)
   :JNew
-    │  jj diff -r @ --git
+    │  capture change_id of @
+    │  jj diff -r <change_id> --git
     │  pi-nvim.complete({ systemPrompt, messages })  ──►  llm.complete
     │                                                     (isolated, no tools)
     │  ◄─────────────────────────────────────────────  { text, model }
+    │  verify @ is still <change_id> (abort if not)
     ▼
-  jj describe -r @ -m "<text>" ; jj new
+  jj describe -r <change_id> -m "<text>" ; jj new <change_id>
 ```
 
 - `pi-nvim` owns the socket, session discovery, and the RPC protocol.
@@ -141,25 +146,31 @@ Neovim (jj-flow)                          Pi (pi-nvim extension)
 
 ```
 :JNew
+  → jj log -T change_id    capture the change_id of @
   → jj log -T empty        is @ empty?
        yes → notify and stop (no empty changes created)
        no  → jj log -T description
               has a description?
-                yes → jj new
-                no  → jj diff -r @ --git            (source of truth)
+                yes → jj new <change_id>
+                no  → jj diff -r <change_id> --git   (source of truth)
                      → pi-nvim.complete({ systemPrompt, messages })
                      → pi-nvim llm.complete (isolated, no tools)
                      → { text }
-                     → jj describe -r @ -m "<text>"
-                     → jj new
+                     → verify @ is still <change_id> (abort if not)
+                     → jj describe -r <change_id> -m "<text>"
+                     → jj new <change_id>
 ```
 
-The real diff (`jj diff -r @ --git`) travels in the payload. The description is
-grounded on the diff, not on Pi's conversational memory.
+The real diff (`jj diff -r <change_id> --git`) travels in the payload. The
+change id is captured before the model call and re-checked before writing, so
+the description is grounded on the diff of the change it will actually be
+applied to, not on a `@` that may have moved.
 
 ### How the diff of `@` is obtained
 
-- `:JNew` uses `jj diff -r @ --git` and sends it to Pi.
+- `:JNew` uses `jj diff -r <change_id> --git` and sends it to Pi, where
+  `<change_id>` is captured once at the start of the command. All later `jj`
+  writes target that same change, never the moving `@` symbol.
 - `:JReview` **never** compares the working tree against Git HEAD. It compares
   the working tree against `@-` (the parent of the current change), which is
   exactly `@`:

@@ -42,6 +42,10 @@ local function sanitize_description(text)
   return first
 end
 
+---@param change_id string
+---@return string
+local function short_change_id(change_id) return change_id:sub(1, 8) end
+
 ---@return boolean
 local function ensure_repo()
   if vim.fn.executable 'jj' ~= 1 then
@@ -104,6 +108,15 @@ function M.new()
     return
   end
 
+  -- Pin every later operation to this change. `@` is a moving target: an
+  -- external `jj new` (or any rewrite) while Pi is thinking must never cause
+  -- the generated description to land on a different change.
+  local change_id = info.change_id
+  if not change_id or change_id == '' then
+    notify('could not determine the change id of @', vim.log.levels.ERROR)
+    return
+  end
+
   -- Empty change: never build a chain of empty changes.
   if info.empty then
     notify 'change @ is empty; not creating another empty change'
@@ -112,7 +125,7 @@ function M.new()
 
   -- Already described: keep the description exactly as-is.
   if info.description ~= '' then
-    local ok, new_err = jj.new()
+    local ok, new_err = jj.new(change_id)
     if not ok then
       notify(new_err, vim.log.levels.ERROR)
       return
@@ -128,7 +141,7 @@ function M.new()
     return
   end
 
-  local diff, diff_err = jj.diff '@'
+  local diff, diff_err = jj.diff(change_id)
   if not diff then
     notify(diff_err, vim.log.levels.ERROR)
     return
@@ -152,13 +165,32 @@ function M.new()
       return
     end
 
-    local ok, describe_err = jj.describe('@', clean)
+    -- Pi may have taken seconds to answer. Re-check that `@` is still the
+    -- change we diffed before touching the repository.
+    local current, cur_err = jj.change_info '@'
+    if not current then
+      notify('could not re-check @ after Pi replied: ' .. tostring(cur_err) .. ' (no jj changes made)', vim.log.levels.ERROR)
+      return
+    end
+    if current.change_id ~= change_id then
+      notify(
+        string.format(
+          '@ changed while Pi was working (%s -> %s); no jj changes made',
+          short_change_id(change_id),
+          current.change_id and short_change_id(current.change_id) or 'unknown'
+        ),
+        vim.log.levels.WARN
+      )
+      return
+    end
+
+    local ok, describe_err = jj.describe(change_id, clean)
     if not ok then
       notify(describe_err, vim.log.levels.ERROR)
       return
     end
 
-    local ok_new, new_err = jj.new()
+    local ok_new, new_err = jj.new(change_id)
     if not ok_new then
       notify(new_err, vim.log.levels.ERROR)
       return

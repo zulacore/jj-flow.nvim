@@ -28,6 +28,7 @@ end
 ---@class jj-flow.ChangeInfo
 ---@field empty boolean
 ---@field description string
+---@field change_id string|nil
 ---@field commit_id string|nil
 ---@field parent_commit_id string|nil
 
@@ -44,12 +45,14 @@ function M.change_info(rev)
   local desc_res = run { 'log', '--no-graph', '-r', rev, '-T', 'description', '--quiet' }
   if not desc_res or desc_res.code ~= 0 then return nil, 'could not read change description: ' .. (desc_res and desc_res.stderr or 'jj failed') end
 
+  local change_res = run { 'log', '--no-graph', '-r', rev, '-T', 'change_id', '--quiet' }
   local id_res = run { 'log', '--no-graph', '-r', rev, '-T', 'commit_id', '--quiet' }
   local parent_res = run { 'log', '--no-graph', '-r', rev .. '-', '-T', 'commit_id', '--quiet' }
 
   return {
     empty = vim.trim(empty_res.stdout) == 'true',
     description = vim.trim(desc_res.stdout or ''),
+    change_id = change_res and change_res.code == 0 and vim.trim(change_res.stdout) or nil,
     commit_id = id_res and id_res.code == 0 and vim.trim(id_res.stdout) or nil,
     parent_commit_id = parent_res and parent_res.code == 0 and vim.trim(parent_res.stdout) or nil,
   }
@@ -76,10 +79,17 @@ function M.describe(rev, message)
   return true
 end
 
+---Create a new change. When `rev` is given the new change is created on top
+---of that revision instead of the current `@`, pinning the operation to a
+---change captured earlier.
+---@param rev? string
 ---@return boolean ok
 ---@return string|nil err
-function M.new()
-  local result = run { 'new' }
+function M.new(rev)
+  local args = { 'new' }
+  if rev and rev ~= '' then table.insert(args, rev) end
+
+  local result = run(args)
   if not result or result.code ~= 0 then return false, 'jj new failed: ' .. (result and result.stderr or 'unknown error') end
   return true
 end
