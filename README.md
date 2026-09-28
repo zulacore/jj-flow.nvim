@@ -5,22 +5,22 @@ A small manual review workflow for Jujutsu (`jj`) + Pi.
 The idea is to control checkpoints by hand:
 
 ```
-trabajo sobre @
+work on @
    ↓
 :JReview
    ↓
-reviso el diff y acumulo comentarios
-(issue / suggestion / note, en línea o rango)
+review the diff and collect comments
+(issue / suggestion / note, on a line or a range)
    ↓
 :JFix
    ↓
-Pi recibe TODOS los comentarios en una sola petición
+Pi receives ALL the comments in a single request
    ↓
-Pi modifica @
+Pi edits @
    ↓
-:JReview  (la review anterior queda stale)
+:JReview  (the previous review is now stale)
    ↓
-si está correcto → :JNew
+if it looks right → :JNew
 ```
 
 And if you want to throw the current work away:
