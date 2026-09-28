@@ -5,9 +5,15 @@ local M = {}
 ---@field add_file string|false Add a comment on the whole file.
 ---@field edit string|false Edit the comment under the cursor.
 ---@field open string|false Open/edit the comment under the cursor (or open the file in the explorer).
----@field close string|false Close the review.
+---@field close string|false Close the review from a normal key.
+---@field exit string|false Close the review (the "leave" key).
+---@field fix string|false Send the whole review to Pi (`:JFix`).
 ---@field delete string|false Delete the comment under the cursor.
 ---@field list string|false List every comment of the session.
+---@field next_file string|false Next file.
+---@field prev_file string|false Previous file.
+---@field next_diff string|false Next difference.
+---@field prev_diff string|false Previous difference.
 ---@field next string|false Next comment.
 ---@field prev string|false Previous comment.
 ---@field next_pane string|false Focus the next review pane.
@@ -45,8 +51,14 @@ M.defaults = {
     edit = 'ge',
     open = '<CR>',
     close = 'q',
+    exit = '<Esc>',
+    fix = '<leader>f',
     delete = 'gd',
     list = 'gl',
+    next_file = ']f',
+    prev_file = '[f',
+    next_diff = ']c',
+    prev_diff = '[c',
     next = ']n',
     prev = '[n',
     next_pane = '<Tab>',

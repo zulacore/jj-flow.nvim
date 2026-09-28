@@ -238,10 +238,12 @@ function M.open(model)
   -- on the prefix would make `gc`, `]n`, ... unreachable.
   local our_keys = {
     km.close,
-    ']c',
-    '[c',
-    ']f',
-    '[f',
+    km.exit,
+    km.fix,
+    km.next_diff,
+    km.prev_diff,
+    km.next_file,
+    km.prev_file,
     km.next_pane,
     km.prev_pane,
     km.compact,
@@ -263,12 +265,27 @@ function M.open(model)
   local allowed = {}
   ---@type table<string, boolean>
   local prefixes = {}
+
+  ---Resolve `<leader>`/`<localleader>` to their actual key so the first
+  ---character can be kept free for the multi-key mapping.
+  ---@param key string
+  ---@return string
+  local function expand_leader(key)
+    local leader = vim.g.mapleader
+    if type(leader) ~= 'string' or leader == '' then leader = '\\' end
+    local localleader = vim.g.maplocalleader
+    if type(localleader) ~= 'string' or localleader == '' then localleader = '\\' end
+    key = key:gsub('<[Ll]eader>', function() return leader end)
+    return (key:gsub('<[Ll]ocalleader>', function() return localleader end))
+  end
+
   for _, key in ipairs(our_keys) do
     if type(key) == 'string' and key ~= '' then
       allowed[key] = true
-      if key:sub(1, 1) ~= '<' then
-        for i = 1, #key - 1 do
-          prefixes[key:sub(1, i)] = true
+      local expanded = expand_leader(key)
+      if expanded:sub(1, 1) ~= '<' then
+        for i = 1, #expanded - 1 do
+          prefixes[expanded:sub(1, i)] = true
         end
       end
     end
@@ -314,11 +331,12 @@ function M.open(model)
   for _, buf in ipairs { explorer_buf, original_buf, modified_buf } do
     restrict_keymaps(buf)
     map(buf, km.close, function() close_session(session) end, 'jj-flow: close review')
-    map(buf, '<Esc>', function() close_session(session) end, 'jj-flow: close review')
-    map(buf, ']c', function() render.next_hunk(session, 1) end, 'jj-flow: next hunk')
-    map(buf, '[c', function() render.next_hunk(session, -1) end, 'jj-flow: previous hunk')
-    map(buf, ']f', function() session.select(session.index + 1) end, 'jj-flow: next file')
-    map(buf, '[f', function() session.select(session.index - 1) end, 'jj-flow: previous file')
+    map(buf, km.exit, function() close_session(session) end, 'jj-flow: close review')
+    map(buf, km.fix, function() require('jj-flow').fix() end, 'jj-flow: fix review (JFix)')
+    map(buf, km.next_diff, function() render.next_hunk(session, 1) end, 'jj-flow: next hunk')
+    map(buf, km.prev_diff, function() render.next_hunk(session, -1) end, 'jj-flow: previous hunk')
+    map(buf, km.next_file, function() session.select(session.index + 1) end, 'jj-flow: next file')
+    map(buf, km.prev_file, function() session.select(session.index - 1) end, 'jj-flow: previous file')
     map(buf, km.next_pane, function() focus_pane(1) end, 'jj-flow: next pane')
     map(buf, km.prev_pane, function() focus_pane(-1) end, 'jj-flow: previous pane')
     map(buf, km.compact, function() compact.toggle(session) end, 'jj-flow: toggle compact')

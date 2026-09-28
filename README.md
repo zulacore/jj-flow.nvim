@@ -143,27 +143,63 @@ What it does:
 
 ### Keymaps
 
-| Key | Action |
-|---|---|
-| `q` / `<Esc>` | Close the review tab and release its buffers. |
-| `<Tab>` / `<S-Tab>` | Focus the next / previous pane (explorer → `@-` → `@`, wrapping). |
-| `]c` / `[c` | Next / previous hunk (crosses into the next/previous file at the edges). |
-| `]f` / `[f` | Next / previous file. |
-| `gc` | Add a comment at the cursor (normal) or on the selection (visual). |
-| `gf` | Add a comment on the whole file (from a diff pane or the explorer). |
-| `ge` | Edit the comment under the cursor. |
-| `<CR>` | Edit the comment under the cursor (falls back to the builtin key when there is none). |
-| `gd` | Delete the comment under the cursor. |
-| `gl` | List every comment of the session and jump to one. |
-| `]n` / `[n` | Next / previous comment (crosses files, wraps). |
-| `gC` | Toggle compact mode (fold unchanged regions). |
-| `j` / `k` (explorer) | Move the selection and open the file. |
-| `<CR>` (explorer) | Open the selected file and focus the `current` pane. |
+Every review key is buffer-local to the review tab: jj-flow defines no global
+mapping, so nothing leaks into your normal files. All of them live in
+`review_keymaps` and can be changed, or disabled with `false`, from `setup()`.
 
-While the comment input float is focused: `<Tab>` cycles the type
-(`issue` → `suggestion` → `note`), `<C-s>` saves and `<Esc>` cancels. All of
-these, plus `gc`/`gf`, are configurable (`comment_cycle`, `comment_submit`,
-`comment_cancel`, `add`, `add_file`).
+Defaults:
+
+| Config key | Default | Action |
+|---|---|---|
+| `next_pane` | `<Tab>` | Focus the next pane (explorer → `@-` → `@`, wrapping). |
+| `prev_pane` | `<S-Tab>` | Focus the previous pane. |
+| `next_file` | `]f` | Next file. |
+| `prev_file` | `[f` | Previous file. |
+| `next_diff` | `]c` | Next hunk / difference (crosses files at the edges). |
+| `prev_diff` | `[c` | Previous hunk / difference. |
+| `add` | `gc` | Add a line comment (normal) or a range comment (visual). |
+| `add_file` | `gf` | Add a comment on the whole file. |
+| `edit` | `ge` | Edit the comment under the cursor. |
+| `open` | `<CR>` | Edit the comment under the cursor; in the explorer, open the selected file and focus `@`. |
+| `delete` | `gd` | Delete the comment under the cursor. |
+| `list` | `gl` | List every comment and jump to one. |
+| `next` | `]n` | Next comment (crosses files, wraps). |
+| `prev` | `[n` | Previous comment. |
+| `compact` | `gC` | Toggle compact mode (fold unchanged regions). |
+| `close` | `q` | Close the review. |
+| `exit` | `<Esc>` | Close the review. |
+| `fix` | `<leader>f` | Send the whole review to Pi (`:JFix`) and close it. |
+| `comment_cycle` | `<Tab>` | Cycle the comment type in the input float. |
+| `comment_submit` | `<C-s>` | Save the comment. |
+| `comment_cancel` | `<Esc>` | Cancel the comment. |
+
+A few keys are deliberately not configurable, because the strict key isolation
+needs them:
+
+- `j`, `k`, `<Up>`, `<Down>` move within the focused pane;
+- `v`/`V` start a visual selection (needed for `gc` range comments);
+- `:` opens the command line, so `:JFix`, `:JNextDiff`, ... stay usable.
+
+Everything else, builtin or plugin, is a no-op inside the review buffers (see
+`review_isolate_keymaps`). The comment input float is a normal buffer and keeps
+your regular editing keys.
+
+Changing or disabling keys:
+
+```lua
+require('jj-flow').setup {
+  review_keymaps = {
+    add = '<leader>cc', -- remap the line-comment key
+    add_file = 'gF',    -- remap the file-comment key
+    compact = false,    -- disable the compact toggle
+    close = false,      -- `q` does nothing; use `exit` instead
+  },
+}
+```
+
+The `:JNextDiff`, `:JPrevDiff`, `:JNextComment` and `:JPrevComment` commands run
+the same actions as `next_diff`, `prev_diff`, `next` and `prev`. Map them
+globally with `vim.keymap.set` if you also want them outside the review.
 
 ### How the diff is rendered
 
@@ -211,16 +247,24 @@ require('jj-flow').setup {
   review_comment_height = 8,    -- height of the comment input float
   review_isolate_keymaps = true, -- drop the user's global keymaps in the review buffers
 
-  -- Buffer-local keymaps used inside the review tab. Set any to false to
-  -- disable it; the plugin only defines these in its own scratch buffers.
+  -- Buffer-local keymaps used inside the review tab. The full list with its
+  -- default keys and actions is in the "Keymaps" section above. Set any key
+  -- to false to disable it; these are only defined in the plugin's own
+  -- scratch buffers, never globally.
   review_keymaps = {
     add = 'gc',
     add_file = 'gf',
     edit = 'ge',
     open = '<CR>',
     close = 'q',
+    exit = '<Esc>',
+    fix = '<leader>f',
     delete = 'gd',
     list = 'gl',
+    next_file = ']f',
+    prev_file = '[f',
+    next_diff = ']c',
+    prev_diff = '[c',
     next = ']n',
     prev = '[n',
     next_pane = '<Tab>',
