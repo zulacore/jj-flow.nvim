@@ -177,12 +177,14 @@ A few keys are deliberately not configurable, because the strict key isolation
 needs them:
 
 - `j`, `k`, `<Up>`, `<Down>` move within the focused pane;
-- `v`/`V` start a visual selection (needed for `gc` range comments);
-- `:` opens the command line, so `:JFix`, `:JNextDiff`, ... stay usable.
+- `v`/`V` start a visual selection (needed for `gc` range comments).
 
 Everything else, builtin or plugin, is a no-op inside the review buffers (see
-`review_isolate_keymaps`). The comment input float is a normal buffer and keeps
-your regular editing keys.
+`review_isolate_keymaps`), including `:`: the command line is blocked in every
+mode (normal, visual and operator-pending), so use the mapped actions above — or
+leave the review with `close`/`exit` — instead of running Ex commands from
+inside it. The comment input float is a normal buffer and keeps your regular
+editing keys.
 
 Changing or disabling keys:
 

@@ -292,7 +292,7 @@ function M.open(model)
   end
   -- Not configurable, but required to leave the review and to start a visual
   -- selection for a range comment.
-  for _, key in ipairs { '<Esc>', 'v', 'V', ':' } do
+  for _, key in ipairs { '<Esc>', 'v', 'V' } do
     allowed[key] = true
   end
 
@@ -324,6 +324,17 @@ function M.open(model)
         if lhs and lhs ~= '' and mapping.buffer ~= 1 and not allowed[lhs] and not prefixes[lhs] then
           pcall(vim.keymap.set, mode, lhs, '<Nop>', { buffer = buf, noremap = true, silent = true, nowait = true })
         end
+      end
+    end
+
+    -- The command line is disabled in every mode. The normal-mode baseline above
+    -- already no-ops `:`; visual and operator-pending would otherwise open
+    -- `:'<,'>` or a range. A callback (rather than `<Nop>`) guarantees the key
+    -- is consumed and never falls through to the builtin.
+    if not prefixes[':'] then
+      local function noop() end
+      for _, mode in ipairs { 'n', 'x', 'v', 's', 'o', 'i' } do
+        pcall(vim.keymap.set, mode, ':', noop, { buffer = buf, silent = true, nowait = true, desc = 'jj-flow: command line disabled' })
       end
     end
   end
