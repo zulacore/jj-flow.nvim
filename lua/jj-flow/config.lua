@@ -24,9 +24,7 @@ local M = {}
 ---@field comment_cycle string|false Cycle the comment type.
 
 ---@class jj-flow.Config
----@field pi_timeout_ms integer How long to wait for Pi's description before aborting.
----@field confirm_abandon boolean Ask for confirmation before `:JAbandon`.
----@field max_diff_chars integer Cap on the diff sent to Pi (grounding payload).
+---@field confirm_restore boolean Ask for confirmation before `:JRestore`.
 ---@field review_explorer_width integer Width of the review file list.
 ---@field review_compact boolean Start :JReview with unchanged regions folded.
 ---@field review_context_lines integer Context lines kept around each hunk in compact mode.
@@ -36,9 +34,7 @@ local M = {}
 ---@field review_keymaps jj-flow.ReviewKeymaps Buffer-local review keymaps.
 
 M.defaults = {
-  pi_timeout_ms = 60000,
-  confirm_abandon = true,
-  max_diff_chars = 120000,
+  confirm_restore = true,
   review_explorer_width = 32,
   review_compact = false,
   review_context_lines = 3,

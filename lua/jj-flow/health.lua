@@ -27,15 +27,13 @@ function M.check()
     end
   end
 
-  -- pi-nvim RPC (needed by :JNew; :JFix additionally needs a live session)
-  local REQUIRED_PROTOCOL = 1
-
+  -- pi-nvim prompt channel (needed by :JFix)
   local ok, pi = pcall(require, 'pi-nvim')
-  if not ok or type(pi) ~= 'table' or type(pi.complete) ~= 'function' then
-    vim.health.error 'pi-nvim with RPC not found; :JNew cannot ask Pi for a description'
+  if not ok or type(pi) ~= 'table' or type(pi.send_raw) ~= 'function' or type(pi.get_socket_path) ~= 'function' then
+    vim.health.error 'pi-nvim with prompt support not found; :JFix cannot send review feedback'
     return
   end
-  vim.health.ok 'pi-nvim with RPC is available'
+  vim.health.ok 'pi-nvim prompt support is available'
 
   local socket = pi.get_socket_path()
   if not socket then
@@ -43,44 +41,6 @@ function M.check()
     return
   end
   vim.health.ok('Pi session: ' .. socket)
-
-  -- Verify the RPC contract on the server side (protocol + required methods).
-  local done, caps, cerr = false, nil, nil
-  pi.capabilities(function(err, result)
-    cerr = err
-    caps = result
-    done = true
-  end, { timeout = 2000 })
-  vim.wait(3000, function() return done end, 50)
-
-  if not done then
-    vim.health.error 'RPC did not answer within 2s'
-    return
-  end
-
-  if cerr then
-    vim.health.error(string.format('RPC capabilities failed: %s: %s', cerr.code, cerr.message))
-    if cerr.code == 'unsupported_method' or (cerr.message or ''):find 'Unknown command type' then
-      vim.health.info 'the running pi-nvim extension is older than this plugin; restart pi with a current extension'
-    end
-    return
-  end
-
-  if type(caps.protocol) == 'number' and caps.protocol >= REQUIRED_PROTOCOL then
-    vim.health.ok(string.format('RPC protocol %s (requires >= %s)', tostring(caps.protocol), REQUIRED_PROTOCOL))
-  else
-    vim.health.error(string.format('RPC protocol %s is older than required (%s)', tostring(caps.protocol), REQUIRED_PROTOCOL))
-  end
-
-  local has_complete = false
-  for _, method in ipairs(caps.methods or {}) do
-    if method == 'llm.complete' then has_complete = true end
-  end
-  if has_complete then
-    vim.health.ok 'llm.complete is available'
-  else
-    vim.health.error 'llm.complete is not available (old pi-nvim extension?)'
-  end
 end
 
 return M

@@ -19,19 +19,18 @@ Pi receives ALL the comments in a single request
 Pi edits @
    ↓
 :JReview  (the previous review is now stale)
-   ↓
-if it looks right → :JNew
 ```
 
-And if you want to throw the current work away:
+When the change is ready, describe it and start the next one with the regular
+`jj` CLI. If you want to discard its file changes without deleting the change:
 
 ```
-:JAbandon
+:JRestore
 ```
 
-Pi does **not** run `jj new`, `jj abandon`, `jj squash`, or `jj rebase`. It only
-modifies the working copy when `:JFix` sends it review feedback, and only
-produces text when `:JNew` asks for a description.
+Pi only modifies the working copy when `:JFix` sends it review feedback. Change
+lifecycle operations such as `jj describe`, `jj commit`, and `jj new` stay in
+the terminal.
 
 During `:JReview` the diff is a snapshot: comments are anchored to the
 `commit_id` captured when the review opened. `:JFix` refuses to send feedback if
@@ -51,15 +50,11 @@ reads the Git index.
 | `:JFix` | With a review open, sends every comment to the running Pi session in one request, then closes the review. Pi edits `@`; the review is intentionally not kept. |
 | `:JNextDiff` / `:JPrevDiff` | Jump to the next / previous difference in the open review. |
 | `:JNextComment` / `:JPrevComment` | Jump to the next / previous review comment. |
-| `:JNew` | If `@` is empty, does nothing. If it already has a description, just runs `jj new`. If it has content and no description, asks Pi for a description, runs `jj describe -r <change_id> -m "..."`, then `jj new <change_id>`. The `change_id` of `@` is captured before calling Pi, so a concurrent external `jj new` cannot make the description land on a different change. |
-| `:JNew!` | Escape hatch: plain `jj new`, no Pi involved. |
-| `:JAbandon` | `jj abandon @`. Discards only the current change; parents and already-accepted changes are left intact. Asks for confirmation (configurable). |
+| `:JRestore` | Runs `jj restore` after confirmation, discarding every file change in `@` while preserving the change identity and description. Refuses to run while a repository buffer has unsaved edits. |
 
-An empty `@` **never** creates another empty change.
-An existing description is **never** modified.
-While Pi is working, `:JNew` remains pinned to the `change_id` captured at the
-start. If `@` moves externally in the meantime, `:JNew` aborts and leaves the
-repository untouched (no description, no new change).
+After a successful restore, Neovim checks loaded buffers for external changes.
+`JRestore` is deliberately not `jj abandon`: it updates the existing `@`
+instead of deleting it and creating a new working-copy change.
 
 ---
 
@@ -69,8 +64,8 @@ Dependencies:
 
 - `jj` on `PATH`.
 - [pi-nvim](https://github.com/zulacore/pi-nvim) on the Neovim side, with its
-  RPC extension loaded in the running Pi session. Description (`:JNew`) uses
-  `llm.complete`; review fixes (`:JFix`) use the interactive prompt channel.
+  extension loaded in the running Pi session. Review fixes (`:JFix`) use its
+  interactive prompt channel.
 
 No Git and no diff plugin: the review UI is built into `jj-flow`.
 
@@ -96,14 +91,13 @@ require('jj-flow').setup()
 
 ### Pi
 
-`jj-flow` has no Pi extension of its own. `:JNew` uses `pi-nvim`'s
-`llm.complete` primitive (isolated, no tools) to describe a change, and `:JFix`
-sends one prompt to the interactive session so Pi can edit the working copy. The
-running Pi session must have `pi-nvim`'s extension loaded. See pi-nvim's README
-for how to install it.
+`jj-flow` has no Pi extension of its own. `:JFix` sends one prompt to the
+interactive session so Pi can edit the working copy. The running Pi session
+must have `pi-nvim`'s extension loaded. See pi-nvim's README for how to install
+it.
 
-If the RPC primitive is not available, `:JNew` detects it and aborts **without
-touching the repository**; `:JFix` refuses to send and leaves the review open.
+If the prompt channel is not available, `:JFix` refuses to send and leaves the
+review open.
 
 ---
 
@@ -238,9 +232,7 @@ is preserved. See [ATTRIBUTION.md](ATTRIBUTION.md).
 
 ```lua
 require('jj-flow').setup {
-  pi_timeout_ms = 60000,        -- how long to wait for Pi's description
-  confirm_abandon = true,       -- confirm before :JAbandon
-  max_diff_chars = 120000,      -- cap on the diff sent to Pi
+  confirm_restore = true,       -- confirm before :JRestore
 
   review_explorer_width = 32,   -- width of the review file list
   review_compact = false,       -- start the review with folds enabled
@@ -288,38 +280,16 @@ require('jj-flow').setup {
 ```
 
 Checks `jj`, the current repository, that the change of `@` can be read, and the
-`pi-nvim` RPC contract (protocol + `llm.complete`).
+`pi-nvim` prompt channel used by `:JFix`.
 
 ---
 
 ## Architecture
 
 jj-flow is a thin workflow layer. It does not talk to the model itself and has
-no Pi extension; it composes `pi-nvim`'s infrastructure primitives:
-
-- `llm.complete` (isolated, no tools) to describe a change for `:JNew`;
-- `prompt` (fire-and-forget turn in the interactive session, with tools) to make
-  Pi address a review for `:JFix`.
-
-```
-Neovim (jj-flow)                          Pi (pi-nvim extension)
-  :JNew
-    │  capture change_id of @
-    │  jj diff -r <change_id> --git
-    │  pi-nvim.complete({ systemPrompt, messages })  ──►  llm.complete
-    │                                                     (isolated, no tools)
-    │  ◄─────────────────────────────────────────────  { text, model }
-    │  verify @ is still <change_id> (abort if not)
-    ▼
-  jj describe -r <change_id> -m "<text>" ; jj new <change_id>
-```
-
-- `pi-nvim` owns the socket, session discovery, and the RPC protocol.
-- jj-flow owns the business rule: what to ask and how to turn the answer into a
-  `jj describe`.
-- The completion runs in the same Pi process, with the same model and
-  credentials, no tools, and isolated from the conversation transcript. The diff
-  is the source of truth.
+no Pi extension. `pi-nvim` owns the socket and session discovery; jj-flow sends
+one fire-and-forget prompt to the interactive session, with tools, when the user
+runs `:JFix`.
 
 ### The `:JReview` data flow
 
@@ -369,35 +339,22 @@ the working tree and must **not** create, abandon, squash, rebase, describe or
 the current working copy, and the instruction says so. One request is sent for
 the whole review; jj-flow never calls Pi once per comment.
 
-### The `:JNew` description flow
+### The `:JRestore` flow
 
 ```
-:JNew
-  → jj log -T change_id    capture the change_id of @
-  → jj log -T empty        is @ empty?
-       yes → notify and stop (no empty changes created)
-       no  → jj log -T description
-              has a description?
-                yes → jj new <change_id>
-                no  → jj diff -r <change_id> --git   (source of truth)
-                     → pi-nvim.complete({ systemPrompt, messages })
-                     → pi-nvim llm.complete (isolated, no tools)
-                     → { text }
-                     → verify @ is still <change_id> (abort if not)
-                     → jj describe -r <change_id> -m "<text>"
-                     → jj new <change_id>
+:JRestore
+  → find modified repository buffers
+       any → abort; save or discard them first
+       none → confirm
+                no  → stop
+                yes → jj restore
+                      → check loaded buffers for external changes
 ```
 
-The real diff (`jj diff -r <change_id> --git`) travels in the payload. The
-change id is captured before the model call and re-checked before writing, so
-the description is grounded on the diff of the change it will actually be
-applied to, not on a `@` that may have moved.
-
-### What happens if Pi fails
-
-Timeout, broken socket, model error, or empty description → **neither
-`jj describe` nor `jj new` runs**. The repository stays untouched and a clear
-error is shown. The repository is only modified after a valid description.
+`jj restore` copies the parent content into the current change. It does not run
+`jj abandon`, so the change ID and metadata of `@` remain intact. Unsaved
+buffers are rejected because `jj` cannot see their contents and they could
+overwrite the restored files later.
 
 ---
 
@@ -406,7 +363,7 @@ error is shown. The repository is only modified after a valid description.
 ```
 jj-flow.nvim/
 └── lua/jj-flow/
-    ├── init.lua              setup, commands, the :JReview / :JFix / :JNew flow
+    ├── init.lua              setup and the :JReview / :JFix / :JRestore flow
     ├── config.lua            configuration
     ├── jj.lua                minimal jj CLI wrapper
     ├── review.lua            :JReview session, layout and teardown
@@ -420,21 +377,15 @@ jj-flow.nvim/
     │   ├── comments.lua      comment model, rendering, navigation and list UI
     │   ├── commentui.lua     floating comment input (type + text)
     │   └── feedback.lua      review comments -> prompt text for Pi
-    └── pi.lua                pi-nvim wrapper (describe + fix)
+    └── pi.lua                pi-nvim review-feedback wrapper
 ```
 
 ---
 
 ## Known limitations
 
-- The description is generated in an isolated model call (same process, same
-  model, diff as the source of truth). It deliberately does not reuse the
-  conversation history.
 - Session selection is `pi-nvim`'s (`:PiSessions`); jj-flow uses the session for
   the current directory.
-- If Pi is mid-turn, the request is still served immediately; the timeout guards
-  against any hang.
-- `:JNew` does not retry: if it fails, run it again by hand.
 - Reports renames as an add plus a delete (that is what `jj diff --summary`
   reports).
 - Compact mode folds each pane independently; opening a fold on one side does
